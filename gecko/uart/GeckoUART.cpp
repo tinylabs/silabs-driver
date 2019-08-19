@@ -8,32 +8,19 @@
 #include <string.h>
 
 #include <leos/iChar.h>
-#include "leos/reg.h"
+#include <leos/reg.h>
+#include <leos/clock.h>
+#include "leos.h"
 
 // Register interface
 typedef struct {
   REG32 DATA;
-  REG32 STATE;
-  REG32 CTRL;
-  union {
-    REG32 INTSTAT;
-    REG32 INTCLR;  // W1C
-  };
-  REG32 BAUDDIV;
-  PAD (0x3F0-1);
-  REG32 PID[8];  // ID registers
-  REG32 CID[4];
 } reg_t;
-
-// Peripheral ID
-const char periph_id[] = { 0x04, 0x00, 0x00, 0x00,
-                           0x18, 0xb8, 0x1b, 0x00,
-                           0x0d, 0xf0, 0x05, 0xb1};
 
 class GeckoUART : public iChar {
  private:
   reg_t *reg;
-  char *clk;
+  clk_node_t clk;
   
  public:
   GeckoUART (int idx, int cnt, va_list ap);
@@ -58,27 +45,29 @@ GeckoUART::GeckoUART (int idx, int cnt, va_list ap)
   reg = (reg_t *)va_arg (ap, uint32_t);
 
   // Get clock node
-  clk = (char *)va_arg (ap, char *);
-
-  // Get clock nodes
+  clk = (clk_node_t)va_arg (ap, clk_node_t);
 }
 
 int GeckoUART::Setup (const char *args)
 {
-  // Enable any clocks necessary
+  uint32_t freq;
+  
+  // Enable clocks necessary
+  clock_set (clk, 1);
+
+  // Get frequency
+  freq = clock_get_freq (clk);
   
   // Probe to make sure we have the correct peripheral
 
   // Setup UART
-  reg->BAUDDIV = 217; 
-  reg->STATE = 0xC;
-  reg->CTRL = 3 | (1 << 6);
   return 0;
 }
 
 void GeckoUART::Cleanup (void)
 {
-  // Disable clocks
+  // Disable clock
+  clock_set (clk, 0);
 }
 
 int GeckoUART::Read (void *buf, int len)
@@ -88,13 +77,6 @@ int GeckoUART::Read (void *buf, int len)
 
 int GeckoUART::Write (const void *buf, int len)
 {
-  int i;
-  uint8_t *cbuf = (uint8_t *)buf;
-  for (i = 0; i < len; i++) {
-    while (reg->STATE & 1)
-      ;
-    reg->DATA = cbuf[i];
-  }
   return len;
 }
 

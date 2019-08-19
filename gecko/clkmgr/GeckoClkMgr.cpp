@@ -10,6 +10,7 @@
 #include "target_clock.h"
 #include <leos/iClkMgr.h>
 #include <leos/reg.h>
+#include <leos/comdef.h>
 
 /**
  * Gecko CMU register interface
@@ -20,52 +21,237 @@ typedef struct {
   REG32 HFPER_DIV;
   REG32 HFRCO_CTRL;
   REG32 LFRCO_CTRL;
+  REG32 AUXHFRCO_CTRL;
+  REG32 CAL_CTRL;
+  REG32 CAL_CNT;
+  REG32 OSCEN_CMD;
+  REG32 CMD;
+  REG32 LFCLK_SEL;
+  REG32 STATUS;
+  REG32 IF;
+  REG32 IFS;
+  REG32 IFC;
+  REG32 IEN;
+  REG32 HFCORE_EN;
+  REG32 HFPER_EN;
+  REG32 pad[2];
+  REG32 SYNCBUSY;
+  REG32 FREEZE;
+  REG32 LFACLK_EN;
+  REG32 pad2;
+  REG32 LFBCLK_EN;
+  REG32 pad3;
+  REG32 LFACLK_PRE;
+  REG32 pad4;
+  REG32 LFBCLK_PRE;
+  REG32 pad5;
+  REG32 PCNT_CTRL;
+  REG32 LCD_CTRL;
+  REG32 ROUTE;
+  REG32 LOCK;
 } reg_t;
+
+// Fixed frequencies
+#define AUXHFRCO_FREQ  14000000 /* 14MHz */
+#define LFRCO_FREQ     32768    /* 32kHz */
+#define ULFRCO_FREQ    1000     /* 1kHz */
+#define HFRCO_CAL(x)   ((uint8_t *)0x0fe081dc)[x]
 
 class GeckoClkMgr : public iClkMgr {
 private:
   uint32_t hfxo, lfxo;
+  reg_t *reg;
   
 public:
   GeckoClkMgr (int idx, int cnt, va_list ap);
   ~GeckoClkMgr () {}
 
   // Common interface
-  int Setup (const char *args);
-  void Cleanup (void);
+  int Setup (const char *args) { return 0; }
+  void Cleanup (void) {}
 
   //  iClkMgr interface
   uint32_t Get (node_t node);
   int Set (node_t node, uint32_t val);
 };
 
+// Export object
+EXPORT_OBJ (GeckoClkMgr, NORMAL);
+
 GeckoClkMgr::GeckoClkMgr (int idx, int cnt, va_list ap)
   : iClkMgr (idx)
 {
-
-}
-
-int GeckoClkMgr::Setup (const char *args)
-{
-  return 0;
-}
-
-void GeckoClkMgr::Cleanup (void)
-{
-
+  // Point to register map
+  reg = (reg_t *)va_arg (ap, uint32_t);
 }
 
 uint32_t GeckoClkMgr::Get (node_t node)
 {
   switch (node) {
-    case HFXO:
-      return hfxo;
+    /* ROOT nodes */
+  case C_AUXHFRCO:
+    return reg->STATUS & (1 << 5) ? AUXHFRCO_FREQ : 0;
+  case C_DBG:
+  case C_MSC:
+    return 1; /* Always enabled */
+    
+  case C_HFXO: /* Must be initialized by init */
+    return reg->STATUS & (1 << 3) ? hfxo : 0;
 
-    case LFXO:
-      return lfxo;
+  case C_LFXO: /* Must be initialized by init */
+    return reg->STATUS & (1 << 9) ? lfxo : 0;
+    
+  case C_HFRCO:
+    /* Check that its ready */
+    if ((reg->STATUS & (1 << 1)) == 0)
+      return 0;
+    /* Switch based on register */
+    switch ((reg->HFRCO_CTRL >> 8) & 7) {
+    case 0:
+      return 1000000; /* 1MHz */
+    case 1:
+      return 7000000; /* 7MHz */
+    case 2:
+      return 11000000; /* 11MHz */
+    case 3:
+      return 14000000; /* 14MHz */
+    case 4:
+      return 21000000; /* 21MHz */
+    case 5:
+      return 28000000; /* 28MHz */
+    default:
+      return 0;
+    }
 
-    case HFRCO:
-      
+  case C_LFRCO:
+    return reg->STATUS & (1 << 7) ? LFRCO_FREQ : 0;
+
+  case C_ULFRCO:
+    return reg->STATUS & (1 << 7) ? ULFRCO_FREQ : 0;
+
+  case C_HF_SEL:
+    if (reg->STATUS & (1 << 13))
+      return C_LFXO;
+    if (reg->STATUS & (1 << 12))
+      return C_LFRCO;
+    if (reg->STATUS & (1 << 11))
+      return C_HFXO;
+    if (reg->STATUS & (1 << 10))
+      return C_HFRCO;
+    /* Should never hit this */
+    return 0;
+
+  case C_HFPER_DIV:
+    /* Check if enabled */
+    if ((reg->HFPER_DIV & (1 << 8)) == 0)
+      return 0;
+    return 1 << (reg->HFPER_DIV & 0xf);
+    
+  case C_HFCORE_DIV:
+    return 1 << (reg->HFCORE_DIV & 0xf);
+    
+  case C_LFA_SEL:
+    switch (reg->LFCLK_SEL & 3) {
+      case 0: return C_NULL;
+      case 1: return C_LFRCO;
+      case 2: return C_LFXO;
+      case 3: return C_HFCORE_DIV2;
+    }
+    
+  case C_LFB_SEL:
+    switch ((reg->LFCLK_SEL >> 2) & 3) {
+      case 0: return C_NULL;
+      case 1: return C_LFRCO;
+      case 2: return C_LFXO;
+      case 3: return C_HFCORE_DIV2;
+    }
+    
+  case C_LFA_RTC_DIV:
+    return 1 << (reg->LFACLK_PRE & 0xf);
+    
+  case C_LFA_LETIMER0_DIV:
+    return 1 << ((reg->LFACLK_PRE >> 4) & 0xf);
+    
+  case C_LFA_LCD_DIV:
+    return 16 << ((reg->LFACLK_PRE >> 8) & 0x3);
+    
+  case C_LFA_FRAME_DIV:
+    return (reg->LCD_CTRL & 7) + 1;
+    
+  case C_LEUART_0_DIV:
+    return 1 << (reg->LFBCLK_PRE & 3);
+    
+  case C_LEUART_1_DIV:
+    return 1 << ((reg->LFBCLK_PRE >> 4) & 3);
+
+  case C_PCNT_EN:
+    /* TODO add PCNT nodes */
+    return 0;
+
+    /* Core CLK */
+  case C_AES:
+    return reg->HFCORE_EN & (1 << 0) ? 1 : 0;
+  case C_DMA:
+    return reg->HFCORE_EN & (1 << 1) ? 1 : 0;
+  case C_LE:
+    return reg->HFCORE_EN & (1 << 2) ? 1 : 0;
+  case C_EBI:
+    return reg->HFCORE_EN & (1 << 3) ? 1 : 0;
+
+    /* Peripheral clock */
+  case C_USART_0:
+    return reg->HFPER_EN & (1 << 0) ? 1 : 0;
+  case C_USART_1:
+    return reg->HFPER_EN & (1 << 1) ? 1 : 0;
+  case C_USART_2:
+    return reg->HFPER_EN & (1 << 2) ? 1 : 0;
+  case C_UART_0:
+    return reg->HFPER_EN & (1 << 3) ? 1 : 0;
+  case C_TMR_0:
+    return reg->HFPER_EN & (1 << 4) ? 1 : 0;
+  case C_TMR_1:
+    return reg->HFPER_EN & (1 << 5) ? 1 : 0;
+  case C_TMR_2:
+    return reg->HFPER_EN & (1 << 6) ? 1 : 0;
+  case C_ACMP_0:
+    return reg->HFPER_EN & (1 << 7) ? 1 : 0;
+  case C_ACMP_1:
+    return reg->HFPER_EN & (1 << 8) ? 1 : 0;
+  case C_PRS:
+    return reg->HFPER_EN & (1 << 10) ? 1 : 0;
+  case C_DAC_0:
+    return reg->HFPER_EN & (1 << 11) ? 1 : 0;
+  case C_GPIO:
+    return reg->HFPER_EN & (1 << 12) ? 1 : 0;
+  case C_VCMP:
+    return reg->HFPER_EN & (1 << 13) ? 1 : 0;
+  case C_ADC_0:
+    return reg->HFPER_EN & (1 << 14) ? 1 : 0;
+  case C_I2C_0:
+    return reg->HFPER_EN & (1 << 15) ? 1 : 0;
+    
+  case C_HFCORE_DIV2:
+    return 2; /* Fixed */
+
+    /* LFA peripherals */
+  case C_RTC:
+    return reg->LFACLK_EN & (1 << 0) ? 1 : 0;
+  case C_LETIMER_0:
+    return reg->LFACLK_EN & (1 << 1) ? 1 : 0;
+  case C_LCD:
+    return reg->LFACLK_EN & (1 << 2) ? 1 : 0;
+
+    /* LFB peripherals */
+  case C_LEUART_0:
+    return reg->LFACLK_EN & (1 << 0) ? 1 : 0;
+  case C_LEUART_1:
+    return reg->LFACLK_EN & (1 << 1) ? 1 : 0;
+
+    /* These need to be reconciled. WDOG is handled in
+     * different block */
+  case C_PCNT:
+  case C_WDOG_SEL:
+    return 0;
   }
 
   // Unknown
@@ -75,28 +261,249 @@ uint32_t GeckoClkMgr::Get (node_t node)
 int GeckoClkMgr::Set (node_t node, uint32_t val)
 {
   switch (node) {
-    case HFXO:
-      hfxo = val;
-      break;
+  case C_NULL:
+  case C_DBG:
+  case C_MSC:
+  case C_ULFRCO:
+  case C_HFCORE_DIV2:
+    break;
 
-    case LFXO:
-      lfxo = val;
-      break;
+  case C_AUXHFRCO:
+    reg->OSCEN_CMD |= val ? (1 << 4) : (1 << 5);
+    while ((reg->STATUS & (1 << 5)) == 0)
+      ;
+    break;
+    
+  case C_HFXO:
+    reg->OSCEN_CMD |= val ? (1 << 2) : (1 << 3);
+    while ((reg->STATUS & (1 << 3)) == 0)
+      ;
+    hfxo = val;
+    break;
+    
+  case C_LFXO:
+    reg->OSCEN_CMD |= val ? (1 << 8) : (1 << 9);
+    while ((reg->STATUS & (1 << 9)) == 0)
+      ;
+    lfxo = val;
+    break;
+    
+  case C_HFRCO:
+    {
+      uint32_t n;
+      
+      /* Snap to closest frequency */
+      if (val <= 1000000)
+        n = HFRCO_CAL(0);
+      else if (val <= 7000000)
+        n = (1 << 8) | HFRCO_CAL(1);
+      else if (val <= 11000000)
+        n = (2 << 8) | HFRCO_CAL(2);
+      else if (val <= 14000000)
+        n = (3 << 8) | HFRCO_CAL(3);
+      else if (val <= 21000000)
+        n = (4 << 8) | HFRCO_CAL(4);
+      else /* 28MHz */
+        n = (5 << 8) | HFRCO_CAL(5);
 
-    case HF_SEL:
-      switch (val) {
-        case HFRCO:
-        case HFXO:
-        case LFRCO:
-        case LFXO:
-          break;
-      }
+      /* Update band + cal */
+      reg->HFRCO_CTRL = n;
+      
+      /* Wait until we stabilize */
+      while ((reg->STATUS & (1 << 1)) == 0)
+        ;
+      break;
+    }
+
+  case C_LFRCO:
+    reg->OSCEN_CMD |= val ? (1 << 6) : (1 << 7);
+    while ((reg->STATUS & (1 << 7)) == 0)
+      ;
+    break;
+
+    /* Switch HFCLK */
+  case C_HF_SEL:
+    switch (val) {
+      default:
+      case C_HFRCO:
+        reg->CMD = 1;
+        break;
+      case C_HFXO:
+        reg->CMD = 2;
+        break;
+      case C_LFRCO:
+        reg->CMD = 3;
+        break;
+      case C_LFXO:
+        reg->CMD = 4;
+        break;
+    }
+    break;
+
+  case C_HFPER_DIV:
+    reg->HFPER_DIV = (1 << 8) | LOG2 (val & 0x1ff);
+    break;
+    
+  case C_HFCORE_DIV:
+    reg->HFCORE_DIV = LOG2 (val & 0x1ff);
+    break;
+    
+  case C_LFA_SEL:
+    switch (val) {
+      case C_LFRCO:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 0xC) | 1;
+        break;
+      case C_LFXO:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 0xC) | 2;
+        break;
+      case C_HFCORE_DIV2:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 0xC) | 3;
+        break;
+      case 0:
+      default:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 0xC);
+        break;
+    }
+    break;
+    
+  case C_LFB_SEL:
+    switch (val) {
+      case C_LFRCO:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 3) | (1 << 2);
+        break;
+      case C_LFXO:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 3) | (2 << 2);
+        break;
+      case C_HFCORE_DIV2:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 3) | (3 << 2);
+        break;
+      case 0:
+      default:
+        reg->LFCLK_SEL = (reg->LFCLK_SEL & 3);
+        break;
+    }
+    break;
+    
+  case C_LFA_RTC_DIV:
+    while (reg->SYNCBUSY & (1 << 2));
+    reg->LFACLK_PRE = (reg->LFACLK_PRE & ~0xf) | LOG2 (val & 0x7fff);
+    break;
+    
+  case C_LFA_LETIMER0_DIV:
+    while (reg->SYNCBUSY & (1 << 2));
+    reg->LFACLK_PRE = (reg->LFACLK_PRE & ~0xf0) | LOG2 (val & 0x7fff) << 4;
+    break;
+    
+  case C_LFA_LCD_DIV:
+    while (reg->SYNCBUSY & (1 << 2));
+    reg->LFACLK_PRE = (reg->LFACLK_PRE & ~0x300) | (LOG2 (val & 0x7f) & 0xf0) << 4;
+    break;
+    
+  case C_LEUART_0_DIV:
+    while (reg->SYNCBUSY & (1 << 6));
+    reg->LFBCLK_PRE = (reg->LFBCLK_PRE & ~3) | LOG2 (val & 0xf);
+    break;
+    
+  case C_LEUART_1_DIV:
+    while (reg->SYNCBUSY & (1 << 6));
+    reg->LFBCLK_PRE = (reg->LFBCLK_PRE & ~0xC) | LOG2 (val & 0xf) << 4;
+    break;
+
+  case C_LFA_FRAME_DIV:
+    reg->LCD_CTRL = (reg->LCD_CTRL & ~7) | (val & 7);
+    break;
+    
+    /* Core CLK */
+  case C_AES:
+    SET_CLEAR_BIT (reg->HFCORE_EN, 0, val);
+    break;    
+  case C_DMA:
+    SET_CLEAR_BIT (reg->HFCORE_EN, 1, val);
+    break;
+  case C_LE:
+    SET_CLEAR_BIT (reg->HFCORE_EN, 2, val);
+    break;
+  case C_EBI:
+    SET_CLEAR_BIT (reg->HFCORE_EN, 3, val);
+    break;
+
+    /* Peripheral clock */
+  case C_USART_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 0, val);
+    break;
+  case C_USART_1:
+    SET_CLEAR_BIT (reg->HFPER_EN, 1, val);
+    break;
+  case C_USART_2:
+    SET_CLEAR_BIT (reg->HFPER_EN, 2, val);
+    break;
+  case C_UART_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 3, val);
+    break;
+  case C_TMR_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 4, val);
+    break;
+  case C_TMR_1:
+    SET_CLEAR_BIT (reg->HFPER_EN, 5, val);
+    break;
+  case C_TMR_2:
+    SET_CLEAR_BIT (reg->HFPER_EN, 6, val);
+    break;
+  case C_ACMP_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 7, val);
+    break;
+  case C_ACMP_1:
+    SET_CLEAR_BIT (reg->HFPER_EN, 8, val);
+    break;
+  case C_PRS:
+    SET_CLEAR_BIT (reg->HFPER_EN, 10, val);
+    break;
+  case C_DAC_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 11, val);
+    break;
+  case C_GPIO:
+    SET_CLEAR_BIT (reg->HFPER_EN, 12, val);
+    break;
+  case C_VCMP:
+    SET_CLEAR_BIT (reg->HFPER_EN, 13, val);
+    break;
+  case C_ADC_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 14, val);
+    break;
+  case C_I2C_0:
+    SET_CLEAR_BIT (reg->HFPER_EN, 15, val);
+    break;
+
+    /* LFA peripherals */
+  case C_RTC:
+    while (reg->SYNCBUSY & (1 << 0));
+    SET_CLEAR_BIT (reg->LFACLK_EN, 0, val);
+    break;
+  case C_LETIMER_0:
+    while (reg->SYNCBUSY & (1 << 0));
+    SET_CLEAR_BIT (reg->LFACLK_EN, 1, val);
+    break;
+  case C_LCD:
+    while (reg->SYNCBUSY & (1 << 0));
+    SET_CLEAR_BIT (reg->LFACLK_EN, 2, val);
+    break;
+  case C_LEUART_0:
+    while (reg->SYNCBUSY & (1 << 4));
+    SET_CLEAR_BIT (reg->LFBCLK_EN, 0, val);
+    break;
+  case C_LEUART_1:
+    while (reg->SYNCBUSY & (1 << 4));
+    SET_CLEAR_BIT (reg->LFBCLK_EN, 1, val);
+    break;
+
+    /* TODO add PCNT nodes */
+  case C_PCNT:
+  case C_WDOG_SEL:
+  case C_PCNT_EN:
+    break;
+
   }
 
-  /* If an oscillator was selected wait for it to stabilize */
-  
+  /* TODO: Update wait states in MSC if clock >= 16M */  
   return 0;
 }
-
-// Export object
-EXPORT_OBJ (GeckoClkMgr, NORMAL);

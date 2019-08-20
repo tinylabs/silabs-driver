@@ -45,7 +45,7 @@ GeckoUART::GeckoUART (int idx, int cnt, va_list ap)
   reg = (reg_t *)va_arg (ap, uint32_t);
 
   // Get clock node
-  clk = (clk_node_t)va_arg (ap, clk_node_t);
+  clk = (clk_node_t)va_arg (ap, uint32_t);
 }
 
 int GeckoUART::Setup (const char *args)
@@ -53,12 +53,21 @@ int GeckoUART::Setup (const char *args)
   uint32_t freq;
   
   // Enable clocks necessary
-  clock_set (clk, 1);
+  leos_clock_set (clk, 1);
 
   // Get frequency
-  freq = clock_get_freq (clk);
+  freq = leos_clock_freq (clk);
   
-  // Probe to make sure we have the correct peripheral
+  // Get baud rate
+  rv = leos_parse_uint (args, "baud=", &baud);
+  if (!rv)
+    return -1;
+
+  // Get mode
+  rv = leos_parse_str (args, "mode=", &mode);
+
+  // Free string
+  leos_free (mode);
 
   // Setup UART
   return 0;
@@ -67,7 +76,7 @@ int GeckoUART::Setup (const char *args)
 void GeckoUART::Cleanup (void)
 {
   // Disable clock
-  clock_set (clk, 0);
+  leos_clock_set (clk, 0);
 }
 
 int GeckoUART::Read (void *buf, int len)

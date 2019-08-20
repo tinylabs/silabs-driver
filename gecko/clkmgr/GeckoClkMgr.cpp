@@ -11,6 +11,7 @@
 #include <leos/iClkMgr.h>
 #include <leos/reg.h>
 #include <leos/comdef.h>
+#include "leos.h"
 
 /**
  * Gecko CMU register interface
@@ -71,8 +72,8 @@ public:
   void Cleanup (void) {}
 
   //  iClkMgr interface
-  uint32_t Get (node_t node);
-  int Set (node_t node, uint32_t val);
+  uint32_t Get (clk_node_t node);
+  int Set (clk_node_t node, uint32_t val);
 };
 
 // Export object
@@ -85,7 +86,7 @@ GeckoClkMgr::GeckoClkMgr (int idx, int cnt, va_list ap)
   reg = (reg_t *)va_arg (ap, uint32_t);
 }
 
-uint32_t GeckoClkMgr::Get (node_t node)
+uint32_t GeckoClkMgr::Get (clk_node_t node)
 {
   switch (node) {
     /* ROOT nodes */
@@ -258,7 +259,18 @@ uint32_t GeckoClkMgr::Get (node_t node)
   return 0;
 }
 
-int GeckoClkMgr::Set (node_t node, uint32_t val)
+void UpdateMSC (int wait_states)
+{
+  // Get CMU pointer
+  
+  // Set wait states
+
+  // Release CMU pointer
+
+  return 0;
+}
+
+int GeckoClkMgr::Set (clk_node_t node, uint32_t val)
 {
   switch (node) {
   case C_NULL:
@@ -266,7 +278,8 @@ int GeckoClkMgr::Set (node_t node, uint32_t val)
   case C_MSC:
   case C_ULFRCO:
   case C_HFCORE_DIV2:
-    break;
+  default:
+    return -1; /* Invalid node to set */
 
   case C_AUXHFRCO:
     reg->OSCEN_CMD |= val ? (1 << 4) : (1 << 5);
@@ -279,6 +292,11 @@ int GeckoClkMgr::Set (node_t node, uint32_t val)
     while ((reg->STATUS & (1 << 3)) == 0)
       ;
     hfxo = val;
+    /* Update wait states if > 16M */
+    if (val >= 16000000)
+      UpdateMSC (1);
+    else
+      UpdateMSC (0);
     break;
     
   case C_LFXO:
@@ -312,6 +330,12 @@ int GeckoClkMgr::Set (node_t node, uint32_t val)
       /* Wait until we stabilize */
       while ((reg->STATUS & (1 << 1)) == 0)
         ;
+
+      /* Update wait states if > 16M */
+      if (val >= 16000000)
+        UpdateMSC (1);
+      else
+        UpdateMSC (0);
       break;
     }
 
@@ -504,6 +528,6 @@ int GeckoClkMgr::Set (node_t node, uint32_t val)
 
   }
 
-  /* TODO: Update wait states in MSC if clock >= 16M */  
-  return 0;
+  /* Success */
+  return 0;  
 }

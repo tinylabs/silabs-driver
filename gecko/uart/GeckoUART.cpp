@@ -60,15 +60,21 @@ int GeckoUART::Setup (const char *args)
   
   // Get baud rate
   rv = leos_parse_uint (args, "baud=", &baud);
-  if (!rv)
+  if (rv)
     return -1;
 
   // Get mode
   rv = leos_parse_str (args, "mode=", &mode);
-
+  if (rv)
+    return -1;
+  
   // Free string
   leos_free (mode);
 
+  // Configure UART
+
+  // Install ISRs
+  
   // Setup UART
   return 0;
 }
@@ -89,3 +95,4 @@ int GeckoUART::Write (const void *buf, int len)
   return len;
 }
 
+// ISRs

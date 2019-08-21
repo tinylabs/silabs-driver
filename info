@@ -1,13 +1,17 @@
 [gecko_clkmgr]
     TYPE=driver
     PATH=gecko/clkmgr
-    SHORT=EFM32 driver
+    SHORT=EFM32 gecko driver
     LONG=EFM32 Gecko ClkMgr driver
 
 [gecko_uart]
     TYPE=driver
     PATH=gecko/uart
-    SHORT=EFM32 driver
+    SHORT=EFM32 gecko driver
     LONG=EFM32 Gecko UART driver
 
-    
+[gecko_gpio]
+    TYPE=driver
+    PATH=gecko/gpio
+    SHORT=EFM32 gecko driver
+    LONG=EFM32 Gecko GPIO driver

@@ -1,5 +1,5 @@
 /**
- *  Driver for CMSDK APB UART - Implemented in MPS2 FPGA development boards.
+ *  Driver for EFM32 gecko UART
  *
  *  All rights reserved.
  *  Tiny Labs Inc
@@ -14,7 +14,28 @@
 
 // Register interface
 typedef struct {
-  REG32 DATA;
+  REG32 CTRL;
+  REG32 FRAME;
+  REG32 TRIGCTRL;
+  REG32 CMD;
+  REG32 STATUS;
+  REG32 CLKDIV;
+  REG32 RXDATAX;
+  REG32 RXDATA;
+  REG32 RXDOUBLEX;
+  REG32 RXDOUBLE;
+  REG32 RXDATAXP;
+  REG32 RXDOUBLEXP;
+  REG32 TXDATAX;
+  REG32 TXDATA;
+  REG32 TXDOUBLEX;
+  REG32 TXDOUBLE;
+  REG32 IF;
+  REG32 IFS;
+  REG32 IFC;
+  REG32 IEN;
+  REG32 IRCTRL;
+  REG32 ROUTE;
 } reg_t;
 
 class GeckoUART : public iChar {
@@ -50,7 +71,9 @@ GeckoUART::GeckoUART (int idx, int cnt, va_list ap)
 
 int GeckoUART::Setup (const char *args)
 {
-  uint32_t freq;
+  int rv;
+  uint32_t freq, baud;
+  char *mode;
   
   // Enable clocks necessary
   leos_clock_set (clk, 1);
@@ -72,9 +95,25 @@ int GeckoUART::Setup (const char *args)
   leos_free (mode);
 
   // Configure UART
+  reg->CMD = (3 << 10);
 
-  // Install ISRs
+  // Enable 4x oversampling (vs 16x)
+  reg->CTRL |= (3 << 5);
+
+  // Set baud rate
+  if (freq <= 16000000)
+    reg->CLKDIV = ((256 * freq) / (4 * baud)) - 256;
+  else
+    reg->CLKDIV = 256 * ((freq / (4 * baud)) - 1);
+
+  // Enable pins
+  reg->ROUTE = 3;
+
+  // Enable transmit
+  reg->CMD = 4;
   
+  // Install ISRs
+
   // Setup UART
   return 0;
 }
@@ -92,6 +131,13 @@ int GeckoUART::Read (void *buf, int len)
 
 int GeckoUART::Write (const void *buf, int len)
 {
+  int i;
+  uint8_t *cbuf = (uint8_t *)buf;
+  for (i = 0; i < len; i++) {
+    reg->TXDATAX = cbuf[i];
+    while ((reg->STATUS & (1 << 5)) == 0)
+      ;
+  }
   return len;
 }
 

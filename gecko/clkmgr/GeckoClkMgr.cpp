@@ -267,7 +267,6 @@ void UpdateMSC (int wait_states)
 
   // Release CMU pointer
 
-  return 0;
 }
 
 int GeckoClkMgr::Set (clk_node_t node, uint32_t val)

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include <leos/iChar.h>
+#include <leos/GPIO.h>
 #include <leos/reg.h>
 #include <leos/clock.h>
 #include "leos.h"
@@ -42,7 +43,8 @@ class GeckoUART : public iChar {
  private:
   reg_t *reg;
   clk_node_t clk;
-  
+  Pin *rx, *tx;
+    
  public:
   GeckoUART (int idx, int cnt, va_list ap);
   ~GeckoUART () {}
@@ -61,12 +63,26 @@ EXPORT_OBJ (GeckoUART, NORMAL);
 GeckoUART::GeckoUART (int idx, int cnt, va_list ap)
   : iChar (idx)
 {
+  int i;
+  
+  // Need at least 4 args
+  if (cnt < 4)
+    return;
   
   // Get address of peripheral
   reg = (reg_t *)va_arg (ap, uint32_t);
 
   // Get clock node
   clk = (clk_node_t)va_arg (ap, uint32_t);
+
+  // Get the pins
+  for (i = 0; i < 2; i++) {
+    char *tmp = va_arg (ap, char *);
+    if (!memcmp (tmp, "RX=", 3))
+      rx = kgetpin (&tmp[3]);
+    else if(!memcmp (tmp, "TX=", 3))
+      tx = kgetpin (&tmp[3]);
+  }
 }
 
 int GeckoUART::Setup (const char *args)
@@ -74,7 +90,11 @@ int GeckoUART::Setup (const char *args)
   int rv;
   uint32_t freq, baud;
   char *mode;
-  
+
+  // Validate pins are good
+  if (!rx | !tx)
+    return -1;
+
   // Enable clocks necessary
   leos_clock_set (clk, 1);
 
@@ -91,14 +111,14 @@ int GeckoUART::Setup (const char *args)
   if (rv)
     return -1;
   
-  // Free string
-  leos_free (mode);
-
-  // Configure UART
+  // Configure UART mode/bitlen/etc
   reg->CMD = (3 << 10);
 
   // Enable 4x oversampling (vs 16x)
   reg->CTRL |= (3 << 5);
+
+  // Free string
+  leos_free (mode);
 
   // Set baud rate
   if (freq <= 16000000)
@@ -111,15 +131,23 @@ int GeckoUART::Setup (const char *args)
 
   // Enable transmit
   reg->CMD = 4;
-  
+
+  // Config the pins
+  rx->Config ("I");
+  tx->Config ("O");
+
   // Install ISRs
 
-  // Setup UART
+  // Allocate TX/RX buffers
   return 0;
 }
 
 void GeckoUART::Cleanup (void)
 {
+  // Free IOs
+  delete tx;
+  delete rx;
+  
   // Disable clock
   leos_clock_set (clk, 0);
 }

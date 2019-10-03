@@ -1,21 +1,24 @@
-[gecko_clkmgr]
-    TYPE=driver
-    PATH=gecko/clkmgr
-    SHORT=EFM32 gecko driver
-    LONG=EFM32 Gecko ClkMgr driver
+[gecko_adc]
+type = driver
+iface = ADC
+sig = f19d3f5f
+path = driver/gecko_adc
+short = 
+long = 
+
+[gecko_spi]
+type = driver
+iface = SPI
+sig = 74a74f3b
+path = driver/gecko_spi
+short = 
+long = 
 
 [gecko_uart]
-    TYPE=driver
-    IFACE=UART
-    SIG=74a74f3b
-    PATH=gecko/uart
-    SHORT=EFM32 gecko driver
-    LONG=EFM32 Gecko UART driver
+type = driver
+iface = UART
+sig = 74a74f3b
+path = driver/gecko_uart
+short = 
+long = 
 
-[gecko_gpio]
-    TYPE=driver
-    IFACE=GPIO
-    SIG=a90798e4
-    PATH=gecko/gpio
-    SHORT=EFM32 gecko driver
-    LONG=EFM32 Gecko GPIO driver

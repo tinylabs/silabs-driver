@@ -6,12 +6,16 @@
 
 [gecko_uart]
     TYPE=driver
+    IFACE=UART
+    SIG=74a74f3b
     PATH=gecko/uart
     SHORT=EFM32 gecko driver
     LONG=EFM32 Gecko UART driver
 
 [gecko_gpio]
     TYPE=driver
+    IFACE=GPIO
+    SIG=a90798e4
     PATH=gecko/gpio
     SHORT=EFM32 gecko driver
     LONG=EFM32 Gecko GPIO driver
